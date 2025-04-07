@@ -1,0 +1,78 @@
+name: Download and Release Sonolus APK
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  download-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Download latest APK
+        run: python scripts/download_sonolus.py
+
+      - name: Get APK info from script outputs
+        id: apk-info
+        run: |
+          if [[ ! -f dl_apk.txt || ! -f dl_version.txt || ! -f dl_link.txt ]]; then exit 1; fi
+          echo "ACTUAL_APK_FILENAME=$(cat dl_apk.txt)" >> $GITHUB_ENV
+          echo "SCRAPED_VERSION=$(cat dl_version.txt)" >> $GITHUB_ENV
+          echo "DOWNLOAD_LINK=$(cat dl_link.txt)" >> $GITHUB_ENV
+          echo "TAG_VERSION=$(cat dl_version.txt | sed -e 's/[^A-Za-z0-9._-]/ /g' -e 's/ /-/g')" >> $GITHUB_ENV
+
+      - name: Check if Tag Exists
+        id: check_tag
+        run: |
+          if git ls-remote --tags origin | grep -q "refs/tags/v${{ env.TAG_VERSION }}$"; then
+            echo "Tag v${{ env.TAG_VERSION }} exists. Skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag v${{ env.TAG_VERSION }} is new."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        id: create_release
+        if: steps.check_tag.outputs.skip == 'false'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ env.TAG_VERSION }}
+          release_name: Sonolus ${{ env.SCRAPED_VERSION }}
+          body: |
+            Sonolus ${{ env.SCRAPED_VERSION }}
+
+            Downloaded from official website: ${{ env.DOWNLOAD_LINK }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        if: steps.check_tag.outputs.skip == 'false'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./${{ env.ACTUAL_APK_FILENAME }}
+          asset_name: ${{ env.ACTUAL_APK_FILENAME }}
+          asset_content_type: application/vnd.android.package-archive
+
+      - name: Clean up downloaded files
+        if: always()
+        run: rm -f *.apk dl_apk.txt dl_version.txt dl_link.txt
