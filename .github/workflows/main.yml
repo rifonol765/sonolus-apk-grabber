@@ -1,69 +1,69 @@
 name: Download and Release Sonolus APK
-
 on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
-
 jobs:
   download-and-release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
+      packages: none
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install requests beautifulsoup4
-
-      - name: Download latest APK
-        run: python scripts/download_sonolus.py
-
-      - name: Get APK info from script outputs
-        id: apk-info
+      - name: Install deps & Get/Compare Versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ ! -f dl_apk.txt || ! -f dl_version.txt || ! -f dl_link.txt ]]; then exit 1; fi
-          echo "ACTUAL_APK_FILENAME=$(cat dl_apk.txt)" >> $GITHUB_ENV
-          echo "SCRAPED_VERSION=$(cat dl_version.txt)" >> $GITHUB_ENV
-          echo "DOWNLOAD_LINK=$(cat dl_link.txt)" >> $GITHUB_ENV
-          echo "TAG_VERSION=$(cat dl_version.txt | sed -e 's/[^A-Za-z0-9._-]/ /g' -e 's/ /-/g')" >> $GITHUB_ENV
-
-      - name: Check if Tag Exists
-        id: check_tag
-        run: |
-          if git ls-remote --tags origin | grep -q "refs/tags/v${{ env.TAG_VERSION }}$"; then
-            echo "Tag v${{ env.TAG_VERSION }} exists. Skipping."
-            echo "skip=true" >> $GITHUB_OUTPUT
+          pip install requests beautifulsoup4 > /dev/null
+          LATEST_RELEASE_TAG=$(gh release list --repo $GITHUB_REPOSITORY --limit 1 --json tagName -q '.[0].tagName // ""' | sed 's/^v//')
+          VERSION_DETAILS=$(python scripts/get_version.py) || exit 1
+          GH_VERSION=$(echo "$VERSION_DETAILS" | head -n 1)
+          CHANGELOG_URL=$(echo "$VERSION_DETAILS" | tail -n 1)
+          TAG_VERSION=$(echo "$GH_VERSION" | sed -e 's/[^A-Za-z0-9._-]/ /g' -e 's/ /-/g')
+          echo "Latest Release: $LATEST_RELEASE_TAG, Latest GH Version: $GH_VERSION (Tag: $TAG_VERSION)"
+          echo "GH_VERSION=$GH_VERSION" >> $GITHUB_ENV
+          echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
+          echo "CHANGELOG_URL=$CHANGELOG_URL" >> $GITHUB_ENV
+          if [[ "$TAG_VERSION" == "$LATEST_RELEASE_TAG" ]]; then
+            echo "Versions match. Skipping."
+            echo "should_run=false" >> $GITHUB_OUTPUT
           else
-            echo "Tag v${{ env.TAG_VERSION }} is new."
-            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "New version detected."
+            echo "should_run=true" >> $GITHUB_OUTPUT
           fi
-
+      - name: Download APK & Get Info
+        if: steps.versions.outputs.should_run == 'true'
+        id: download
+        run: |
+          python scripts/download_sonolus.py || exit 1
+          if [[ ! -f dl_apk.txt || ! -f dl_link.txt ]]; then echo "ERROR: Output files missing after download script."; exit 1; fi
+          echo "ACTUAL_APK_FILENAME=$(cat dl_apk.txt)" >> $GITHUB_ENV
+          echo "DOWNLOAD_LINK=$(cat dl_link.txt)" >> $GITHUB_ENV
       - name: Create Release
+        if: steps.versions.outputs.should_run == 'true'
         id: create_release
-        if: steps.check_tag.outputs.skip == 'false'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ env.TAG_VERSION }}
-          release_name: Sonolus ${{ env.SCRAPED_VERSION }}
+          release_name: Sonolus ${{ env.GH_VERSION }}
           body: |
-            Sonolus ${{ env.SCRAPED_VERSION }}
+            Sonolus ${{ env.GH_VERSION }}
+
+            Changelog: ${{ env.CHANGELOG_URL }}
 
             Downloaded from official website: ${{ env.DOWNLOAD_LINK }}
           draft: false
           prerelease: false
-
       - name: Upload Release Asset
-        if: steps.check_tag.outputs.skip == 'false'
+        if: steps.versions.outputs.should_run == 'true'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,7 +72,6 @@ jobs:
           asset_path: ./${{ env.ACTUAL_APK_FILENAME }}
           asset_name: ${{ env.ACTUAL_APK_FILENAME }}
           asset_content_type: application/vnd.android.package-archive
-
-      - name: Clean up downloaded files
+      - name: Clean up
         if: always()
-        run: rm -f *.apk dl_apk.txt dl_version.txt dl_link.txt
+        run: rm -f *.apk dl_apk.txt dl_link.txt
