@@ -22,9 +22,9 @@ jobs:
           pip install requests beautifulsoup4 > /dev/null
           LATEST_RELEASE_TAG=$(gh release list --repo $GITHUB_REPOSITORY --limit 1 --json tagName -q '.[0].tagName // ""' | sed 's/^v//')
           VERSION_DETAILS=$(python scripts/get_version.py) || exit 1
-          RELEASE_VERSION_NUMERIC=$(echo "$VERSION_DETAILS" | sed -n '1p') # Numeric only for Release Name/Body
-          TAG_VERSION=$(echo "$VERSION_DETAILS" | sed -n '2p')             # Numeric only (sanitized) for Git Tag/Comparison
-          CHANGELOG_URL=$(echo "$VERSION_DETAILS" | sed -n '3p')           # Numeric only for URL
+          RELEASE_VERSION_NUMERIC=$(echo "$VERSION_DETAILS" | sed -n '1p')
+          TAG_VERSION=$(echo "$VERSION_DETAILS" | sed -n '2p')
+          CHANGELOG_URL=$(echo "$VERSION_DETAILS" | sed -n '3p')
           echo "Latest Release Tag: $LATEST_RELEASE_TAG, Derived Numeric: $RELEASE_VERSION_NUMERIC, Derived Tag: $TAG_VERSION"
           echo "RELEASE_VERSION_NUMERIC=$RELEASE_VERSION_NUMERIC" >> $GITHUB_ENV
           echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
@@ -51,12 +51,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ env.TAG_VERSION }}                       # Use numeric-only tag
-          release_name: Sonolus ${{ env.RELEASE_VERSION_NUMERIC }} # Use numeric-only version
+          tag_name: v${{ env.TAG_VERSION }}
+          release_name: Sonolus ${{ env.RELEASE_VERSION_NUMERIC }}
           body: |
-            Sonolus ${{ env.RELEASE_VERSION_NUMERIC }}             # Use numeric-only version
+            Sonolus ${{ env.RELEASE_VERSION_NUMERIC }}
 
-            Changelog: ${{ env.CHANGELOG_URL }}                    # Use numeric-only changelog URL
+            Changelog: ${{ env.CHANGELOG_URL }}
 
             Downloaded from official website: ${{ env.DOWNLOAD_LINK }}
           draft: false
