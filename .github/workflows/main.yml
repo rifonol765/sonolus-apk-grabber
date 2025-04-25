@@ -18,27 +18,22 @@ jobs:
         id: versions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_API_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Kept for potential future use, harmless here
         run: |
           pip install requests beautifulsoup4 > /dev/null
           LATEST_RELEASE_TAG=$(gh release list --repo $GITHUB_REPOSITORY --limit 1 --json tagName -q '.[0].tagName // ""' | sed 's/^v//')
-          # This now runs the updated get_version.py (scraping sonolus.com)
           VERSION_DETAILS=$(python scripts/get_version.py) || exit 1
-          # The script still outputs version first, then changelog URL
-          GH_VERSION=$(echo "$VERSION_DETAILS" | head -n 1)
-          CHANGELOG_URL=$(echo "$VERSION_DETAILS" | tail -n 1)
-          # TAG_VERSION is still generated from the scraped version (GH_VERSION)
-          TAG_VERSION=$(echo "$GH_VERSION" | sed -e 's/[^A-Za-z0-9._-]/ /g' -e 's/ /-/g')
-          echo "Latest Release: $LATEST_RELEASE_TAG, Latest Scraped Version: $GH_VERSION (Tag: $TAG_VERSION)"
-          echo "GH_VERSION=$GH_VERSION" >> $GITHUB_ENV
+          SCRAPED_VERSION=$(echo "$VERSION_DETAILS" | sed -n '1p') # Full version with Beta etc.
+          TAG_VERSION=$(echo "$VERSION_DETAILS" | sed -n '2p')     # Numeric-only, sanitized for tag
+          CHANGELOG_URL=$(echo "$VERSION_DETAILS" | sed -n '3p')   # Numeric-only URL
+          echo "Latest Release Tag: $LATEST_RELEASE_TAG, Scraped Full: $SCRAPED_VERSION, Derived Tag: $TAG_VERSION"
+          echo "SCRAPED_VERSION=$SCRAPED_VERSION" >> $GITHUB_ENV
           echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
           echo "CHANGELOG_URL=$CHANGELOG_URL" >> $GITHUB_ENV
-          # Comparison logic remains the same
           if [[ "$TAG_VERSION" == "$LATEST_RELEASE_TAG" ]]; then
-            echo "Versions match. Skipping."
+            echo "Versions match (Tag: $TAG_VERSION). Skipping."
             echo "should_run=false" >> $GITHUB_OUTPUT
           else
-            echo "New version detected."
+            echo "New version detected (Tag: $TAG_VERSION)."
             echo "should_run=true" >> $GITHUB_OUTPUT
           fi
       - name: Download APK & Get Info
@@ -56,12 +51,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ env.TAG_VERSION }}
-          release_name: Sonolus ${{ env.GH_VERSION }}
+          tag_name: v${{ env.TAG_VERSION }}             # Use numeric-only tag
+          release_name: Sonolus ${{ env.SCRAPED_VERSION }} # Use full scraped version
           body: |
-            Sonolus ${{ env.GH_VERSION }}
+            Sonolus ${{ env.SCRAPED_VERSION }}           # Use full scraped version
 
-            Changelog: ${{ env.CHANGELOG_URL }}
+            Changelog: ${{ env.CHANGELOG_URL }}          # Use numeric-only changelog URL
 
             Downloaded from official website: ${{ env.DOWNLOAD_LINK }}
           draft: false
