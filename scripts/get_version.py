@@ -1,24 +1,31 @@
-import requests, sys, os, re
+# scripts/get_version.py
+import requests, bs4, sys, os, re
 
-def parse_version_tuple(v_str):
-    parts = re.split(r'[._]', v_str)
-    try: return tuple(int(p) for p in parts)
-    except ValueError: return None
+def sanitize_for_url(v_str):
+    # Replace spaces and non-alphanumeric/dot/underscore/hyphen with hyphen
+    s = re.sub(r'[^\w._-]+', ' ', v_str)
+    s = re.sub(r'\s+', '-', s)
+    return s.strip('-')
 
 try:
-    url = "https://api.github.com/repos/Sonolus/wiki/contents/src/en/release-notes/versions"
-    headers = {'Accept': 'application/vnd.github.v3+json'}
-    if token := os.environ.get('GH_API_TOKEN'): headers['Authorization'] = f"token {token}"
-    r = requests.get(url, headers=headers, timeout=20); r.raise_for_status()
-    files = r.json()
-    if not isinstance(files, list): raise ValueError("Bad API response")
-    v_strings = [f['name'][:-3] for f in files if f['type']=='file' and f['name'].endswith('.md')]
-    if not v_strings: raise ValueError("No version files found")
-    latest_v_str, max_v_tuple = "", (-1,)
-    for v_str in v_strings:
-        if (v_tuple := parse_version_tuple(v_str)) and v_tuple > max_v_tuple:
-            max_v_tuple, latest_v_str = v_tuple, v_str
-    if not latest_v_str: raise ValueError("No valid version determined")
-    changelog_url = f"https://wiki.sonolus.com/release-notes/versions/{latest_v_str}"
-    print(latest_v_str); print(changelog_url)
-except Exception as e: print(f"ERROR get_version: {e}", file=sys.stderr); sys.exit(1)
+    main_url = "https://sonolus.com"
+    response = requests.get(main_url, timeout=20)
+    response.raise_for_status()
+    soup = bs4.BeautifulSoup(response.text, 'html.parser')
+    version_tag = soup.find('p', class_='font-bold')
+    if not version_tag:
+        raise ValueError("Version tag (<p class='font-bold'>) not found on sonolus.com")
+    scraped_version = version_tag.text.strip()
+    if not scraped_version:
+         raise ValueError("Scraped version string is empty")
+
+    # Generate the likely changelog URL based on the scraped version
+    url_version_part = sanitize_for_url(scraped_version)
+    changelog_url = f"https://wiki.sonolus.com/release-notes/versions/{url_version_part}"
+
+    print(scraped_version)
+    print(changelog_url)
+
+except Exception as e:
+    print(f"ERROR get_version: {e}", file=sys.stderr)
+    sys.exit(1)
