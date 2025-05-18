@@ -1,26 +1,16 @@
-import requests, bs4, sys, re
-
-def sanitize_for_tag(version_str):
-    sanitized = re.sub(r'[^a-zA-Z0-9._-]+', '-', version_str)
-    sanitized = re.sub(r'-+', '-', sanitized)
-    sanitized = sanitized.strip('-')
-    return sanitized
-
+import requests,bs4,sys,re
 try:
-    main_url = "https://sonolus.com"
-    response = requests.get(main_url, timeout=30); response.raise_for_status()
-    soup = bs4.BeautifulSoup(response.text, 'html.parser')
-    version_tag = soup.find('p', class_='font-bold')
-    if not version_tag: raise ValueError("Version tag not found on main page")
-    full_scraped_version = version_tag.text.strip() # e.g., "0.8.12 Beta"
-    numeric_match = re.match(r'([0-9._]+)', full_scraped_version)
-    if not numeric_match: raise ValueError(f"Could not extract numeric part from '{full_scraped_version}'")
-    numeric_only_version = numeric_match.group(1).strip('._') # e.g., "0.8.12"
-    tag_version = sanitize_for_tag(numeric_only_version) # e.g., "0.8.12"
-    changelog_url = f"https://wiki.sonolus.com/release-notes/versions/{numeric_only_version}" # Uses numeric
-    # Output: 1. Numeric Version, 2. Tag Version (Numeric-Sanitized), 3. Changelog URL (Numeric)
-    print(numeric_only_version)
-    print(tag_version)
-    print(changelog_url)
-except Exception as e:
-    print(f"ERROR get_version: {e}", file=sys.stderr); sys.exit(1)
+    r=requests.get("https://sonolus.com",timeout=30);r.raise_for_status()
+    vt=bs4.BeautifulSoup(r.text,'html.parser').find('p',class_='font-bold')
+    if not vt:raise ValueError("TagNF")
+    fsv=vt.text.strip()
+    m=re.match(r'([0-9._]+)(?:\s*\(([0-9]+)\))?(.*)',fsv)
+    if not m:raise ValueError(f"ParseErr:'{fsv}'")
+    bvp=m.group(1).strip('._');pnd=m.group(2)
+    dvp=bvp
+    if pnd:dvp+=f" ({pnd})"
+    tuk=bvp
+    if pnd:tuk+=f"_{pnd}"
+    cu=f"https://wiki.sonolus.com/release-notes/versions/{tuk}"
+    print(dvp);print(tuk);print(cu)
+except Exception as e:print(f"ERRgv:{e}",file=sys.stderr);sys.exit(1)
