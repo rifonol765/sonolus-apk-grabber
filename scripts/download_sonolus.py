@@ -1,4 +1,3 @@
-# scripts/download_sonolus.py
 import requests, bs4, os, cgi, sys
 from urllib.parse import urlparse, urljoin
 FN, LK = "dl_apk.txt", "dl_link.txt"
