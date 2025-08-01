@@ -1,7 +1,5 @@
 name: Download and Release Sonolus APK
 on:
-  schedule:
-    - cron: "0 * * * *"
   workflow_dispatch:
 jobs:
   download-and-release:
